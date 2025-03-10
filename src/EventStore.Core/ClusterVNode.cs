@@ -382,29 +382,33 @@ public class ClusterVNode<TStreamId> :
 				truncateChk = new InMemoryCheckpoint(Checkpoint.Truncate, initValue: -1);
 				streamExistenceFilterChk = new InMemoryCheckpoint(Checkpoint.StreamExistenceFilter, initValue: -1);
 			} else {
+				var defaultIndexPath = Path.Combine(dbPath, ESConsts.DefaultIndexDirectoryName);
 				try {
-					if (!Directory.Exists(dbPath)) // mono crashes without this check
-						Directory.CreateDirectory(dbPath);
+					Directory.CreateDirectory(dbPath);
+					if (options.Database.Index is null) {
+						// Try and create the default index directory here in case the data directory exist but we don't have write access
+						Directory.CreateDirectory(defaultIndexPath);
+					}
 				} catch (UnauthorizedAccessException) {
-					if (dbPath == Locations.DefaultDataDirectory) {
+					// Only use the fallback default directory if we are using a default directory
+					if (dbPath == Locations.DefaultDataDirectory || dbPath == Locations.LegacyDataDirectory) {
 						Log.Information(
 							"Access to path {dbPath} denied. The KurrentDB database will be created in {fallbackDefaultDataDirectory}",
 							dbPath, Locations.FallbackDefaultDataDirectory);
 						dbPath = Locations.FallbackDefaultDataDirectory;
+						defaultIndexPath = Path.Combine(dbPath, ESConsts.DefaultIndexDirectoryName);
 						Log.Information("Defaulting DB Path to {dbPath}", dbPath);
-
-						if (!Directory.Exists(dbPath)) // mono crashes without this check
-							Directory.CreateDirectory(dbPath);
+						Directory.CreateDirectory(dbPath);
 					} else {
 						throw;
 					}
 				}
 
-				var indexPath = options.Database.Index ?? Path.Combine(dbPath, ESConsts.DefaultIndexDirectoryName);
+				var indexPath = options.Database.Index ?? defaultIndexPath;
+				Log.Information("Index Path set to {indexPath}", indexPath);
+
 				var streamExistencePath = Path.Combine(indexPath, ESConsts.StreamExistenceFilterDirectoryName);
-				if (!Directory.Exists(streamExistencePath)) {
-					Directory.CreateDirectory(streamExistencePath);
-				}
+				Directory.CreateDirectory(streamExistencePath);
 
 				var writerCheckFilename = Path.Combine(dbPath, Checkpoint.Writer + ".chk");
 				var chaserCheckFilename = Path.Combine(dbPath, Checkpoint.Chaser + ".chk");
